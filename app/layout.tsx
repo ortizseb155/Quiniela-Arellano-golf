@@ -1,22 +1,14 @@
-import type { ReactNode } from 'react';
-import { AuthProvider } from '@/lib/auth';
-import NavBar from '@/components/NavBar';
 import './globals.css';
 
 export const metadata = {
-  title: 'Quiniela de Golf',
-  description: 'Quiniela familiar de golf',
+  title: 'Quiniela Arellano - Tenis',
+  description: 'Quiniela familiar de tenis',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body>
-        <AuthProvider>
-          <NavBar />
-          <main>{children}</main>
-        </AuthProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
