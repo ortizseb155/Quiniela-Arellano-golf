@@ -23,6 +23,7 @@ interface Player {
   made_cut: boolean | null;
   position_r2: number | null;
   strokes_behind_r2: number | null;
+  score_r2: number | null;
   final_position: number | null;
   withdrawn: boolean;
 }
@@ -42,6 +43,8 @@ export default function AdminPage() {
   const [newParticipantPin, setNewParticipantPin] = useState('');
   const [allParticipants, setAllParticipants] = useState<{ id: string; name: string }[]>([]);
   const [draftCounts, setDraftCounts] = useState<Record<string, number>>({});
+  const [draftTeams, setDraftTeams] = useState<Record<string, { name: string; price: number; isReplacement: boolean }[]>>({});
+  const [cutLine, setCutLine] = useState<number | ''>('');
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => { loadTournaments(); }, []);
@@ -49,14 +52,23 @@ export default function AdminPage() {
   useEffect(() => { if (activeTournament) loadDraftStatus(activeTournament.id); }, [activeTournament]);
 
   async function loadDraftStatus(tournamentId: string) {
-    const [{ data: participantsData }, { data: picksData }] = await Promise.all([
+    const [{ data: participantsData }, { data: picksData }, { data: playersData }] = await Promise.all([
       supabase.from('participants').select('id, name').order('name'),
-      supabase.from('picks').select('participant_id, is_replacement').eq('tournament_id', tournamentId).eq('is_replacement', false),
+      supabase.from('picks').select('participant_id, player_id, is_replacement').eq('tournament_id', tournamentId),
+      supabase.from('players').select('id, name, current_price').eq('tournament_id', tournamentId),
     ]);
     setAllParticipants(participantsData || []);
     const counts: Record<string, number> = {};
-    (picksData || []).forEach(p => { counts[p.participant_id] = (counts[p.participant_id] || 0) + 1; });
+    (picksData || []).filter(p => !p.is_replacement).forEach(p => { counts[p.participant_id] = (counts[p.participant_id] || 0) + 1; });
     setDraftCounts(counts);
+
+    const teams: Record<string, { name: string; price: number; isReplacement: boolean }[]> = {};
+    (picksData || []).forEach(pk => {
+      const player = (playersData || []).find(pl => pl.id === pk.player_id);
+      teams[pk.participant_id] = teams[pk.participant_id] || [];
+      teams[pk.participant_id].push({ name: player?.name || '?', price: player?.current_price || 0, isReplacement: pk.is_replacement });
+    });
+    setDraftTeams(teams);
   }
 
   async function loadTournaments() {
@@ -194,6 +206,46 @@ export default function AdminPage() {
     if (activeTournament) await loadPlayers(activeTournament.id);
   }
 
+  async function saveScoreR2(player: Player, score: number | null) {
+    await supabase.from('players').update({ score_r2: score }).eq('id', player.id);
+    if (activeTournament) await loadPlayers(activeTournament.id);
+  }
+
+  async function calculateCutAutomatically() {
+    if (!activeTournament || cutLine === '') {
+      setMessage('Captura la línea de corte primero.');
+      return;
+    }
+    const withScores = players.filter(p => p.score_r2 !== null && p.score_r2 !== undefined);
+    if (withScores.length === 0) {
+      setMessage('Todavía no hay ningún score de ronda 2 capturado.');
+      return;
+    }
+
+    // Ordenar de menor a mayor score (menor score = mejor posición en golf)
+    const sorted = [...withScores].sort((a, b) => (a.score_r2 as number) - (b.score_r2 as number));
+    const leaderScore = sorted[0].score_r2 as number;
+
+    let rank = 1;
+    const updates = sorted.map((p, i) => {
+      // Posición estilo golf: empates comparten posición, el siguiente salta (ej. T2, T2, 4)
+      if (i > 0 && p.score_r2 !== sorted[i - 1].score_r2) rank = i + 1;
+      const strokesBehind = (p.score_r2 as number) - leaderScore;
+      const madeCut = (p.score_r2 as number) <= Number(cutLine);
+      const newPrice = recalculatePriceAfterCut(p.initial_price, rank, strokesBehind, madeCut);
+      return supabase.from('players').update({
+        position_r2: rank,
+        strokes_behind_r2: strokesBehind,
+        made_cut: madeCut,
+        current_price: Math.round(newPrice),
+      }).eq('id', p.id);
+    });
+
+    await Promise.all(updates);
+    await loadPlayers(activeTournament.id);
+    setMessage(`Calculado para ${sorted.length} golfista(s): posición, corte, golpes de diferencia y precio nuevo.`);
+  }
+
   async function recalculateAllPrices() {
     if (!activeTournament) return;
     const updates = players.map(p => {
@@ -264,10 +316,18 @@ export default function AdminPage() {
             <tbody>
               {allParticipants.map(p => {
                 const count = draftCounts[p.id] || 0;
+                const team = draftTeams[p.id] || [];
                 return (
                   <tr key={p.id}>
                     <td>{p.name}</td>
-                    <td>{count >= 6 ? `✅ Ya eligió (${count}/6)` : count > 0 ? `⏳ En progreso (${count}/6)` : '❌ Aún no ha elegido'}</td>
+                    <td>
+                      {count >= 6 ? `✅ Ya eligió (${count}/6)` : count > 0 ? `⏳ En progreso (${count}/6)` : '❌ Aún no ha elegido'}
+                      {team.length > 0 && (
+                        <div className="muted" style={{ marginTop: 4 }}>
+                          {team.map((t, i) => `${t.name} ($${t.price}${t.isReplacement ? ', reemplazo' : ''})`).join(' · ')}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -300,14 +360,34 @@ export default function AdminPage() {
             <input type="file" accept=".xlsx,.xls,.csv" onChange={handleBulkUpload} />
           </div>
 
+          <div className="card" style={{ marginTop: 12, background: '#e8f0ea' }}>
+            <h4 style={{ marginTop: 0 }}>Calcular corte, posición, golpes y precio automáticamente</h4>
+            <p className="muted">
+              Captura el score de cada golfista relativo a par en la columna "Score R2" de la tabla
+              (ej. -8, +3, 0 para E). Luego pon la línea de corte aquí y dale al botón — calcula todo de un jalón.
+            </p>
+            <div className="row">
+              <label>Línea de corte:
+                <input
+                  type="number"
+                  placeholder="ej. 2"
+                  value={cutLine}
+                  onChange={e => setCutLine(e.target.value === '' ? '' : Number(e.target.value))}
+                  style={{ width: 80 }}
+                />
+              </label>
+              <button onClick={calculateCutAutomatically}>⚡ Calcular todo</button>
+            </div>
+          </div>
+
           <div className="row" style={{ margin: '12px 0' }}>
             <button onClick={calculatePricesFromOdds}>💲 Calcular precios con momios</button>
-            <button onClick={recalculateAllPrices}>💲 Recalcular precios post-corte (ronda 2)</button>
+            <button onClick={recalculateAllPrices}>💲 Recalcular precios (tras un ajuste manual)</button>
           </div>
 
           <table>
             <thead>
-              <tr><th>Golfista</th><th>Momio</th><th>Precio</th><th>Corte</th><th>Pos. R2</th><th>Golpes vs líder</th><th>Posición final</th></tr>
+              <tr><th>Golfista</th><th>Momio</th><th>Precio</th><th>Score R2</th><th>Corte</th><th>Pos. R2</th><th>Golpes vs líder</th><th>Posición final</th></tr>
             </thead>
             <tbody>
               {players.map(p => (
@@ -315,6 +395,15 @@ export default function AdminPage() {
                   <td>{p.name}</td>
                   <td>{p.moneyline ?? '-'}</td>
                   <td>${p.current_price}</td>
+                  <td>
+                    <input
+                      type="number"
+                      step={1}
+                      style={{ width: 60 }}
+                      defaultValue={p.score_r2 ?? ''}
+                      onBlur={e => saveScoreR2(p, e.target.value !== '' ? Number(e.target.value) : null)}
+                    />
+                  </td>
                   <td>
                     <button onClick={() => toggleMadeCut(p)}>
                       {p.made_cut === true ? '✅ Pasó' : p.made_cut === false ? '❌ Fuera' : 'Sin definir'}
