@@ -18,6 +18,8 @@ interface TeamStanding {
     round2: number;
     round3: number;
     round4: number;
+    countsRound1: boolean;
+    countsRound2: boolean;
     countsRound3: boolean;
     countsRound4: boolean;
     cutBonus: number;
@@ -87,11 +89,15 @@ export default function LeaderboardPage() {
       const round3Top4Idx = new Set([...roster].map((r, idx) => ({ idx, pts: r.round3 })).sort((a, b) => b.pts - a.pts).slice(0, 4).map(x => x.idx));
       const round4Top4Idx = new Set([...roster].map((r, idx) => ({ idx, pts: r.round4 })).sort((a, b) => b.pts - a.pts).slice(0, 4).map(x => x.idx));
 
-      const finalRoster = roster.map((r, idx) => {
+      const finalRoster = roster.map((r, idx, arr) => {
+        const pick = picks[idx];
+        const countsRound1 = !pick.isReplacement;
+        const countsRound2 = !pick.isReplacement;
         const countsRound3 = round3Top4Idx.has(idx);
         const countsRound4 = round4Top4Idx.has(idx);
-        const total = r.round1 + r.round2 + (countsRound3 ? r.round3 : 0) + (countsRound4 ? r.round4 : 0) + r.cutBonus + r.finishBonus;
-        return { ...r, countsRound3, countsRound4, total };
+        const total = (countsRound1 ? r.round1 : 0) + (countsRound2 ? r.round2 : 0)
+          + (countsRound3 ? r.round3 : 0) + (countsRound4 ? r.round4 : 0) + r.cutBonus + r.finishBonus;
+        return { ...r, countsRound1, countsRound2, countsRound3, countsRound4, total };
       });
       const roundTotals = {
         round1: teamRoundPoints(picks, 1, holeResults),
@@ -144,8 +150,8 @@ export default function LeaderboardPage() {
               {s.roster.sort((a, b) => b.total - a.total).map((r, idx) => (
                 <tr key={idx}>
                   <td>{r.playerName}</td>
-                  <td>{r.round1}</td>
-                  <td>{r.round2}</td>
+                  <td style={r.countsRound1 ? {} : { textDecoration: 'line-through', color: '#b3261e' }}>{r.round1}</td>
+                  <td style={r.countsRound2 ? {} : { textDecoration: 'line-through', color: '#b3261e' }}>{r.round2}</td>
                   <td style={r.countsRound3 ? {} : { textDecoration: 'line-through', color: '#b3261e' }}>{r.round3}</td>
                   <td style={r.countsRound4 ? {} : { textDecoration: 'line-through', color: '#b3261e' }}>{r.round4}</td>
                   <td>{r.cutBonus}</td>
