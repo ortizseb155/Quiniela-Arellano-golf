@@ -88,16 +88,18 @@ export function teamRoundPoints(
   round: number,
   holeResults: HoleResultRow[]
 ): number {
+  if (round <= 2) {
+    // Los reemplazos NO estaban en el equipo en rondas 1-2, así que no cuentan aquí.
+    return picks
+      .filter(p => !p.isReplacement)
+      .reduce((sum, p) => sum + playerRoundHolePoints(p.playerId, round, holeResults), 0);
+  }
+
+  // Rondas 3 y 4: todos los del roster (originales y reemplazos) compiten; solo los 4 mejores de ESA ronda puntúan.
   const roundPointsByPlayer = picks.map(p => ({
     playerId: p.playerId,
     points: playerRoundHolePoints(p.playerId, round, holeResults),
   }));
-
-  if (round <= 2) {
-    return roundPointsByPlayer.reduce((sum, p) => sum + p.points, 0);
-  }
-
-  // Rondas 3 y 4: solo los 4 mejores de ESA ronda
   const top4 = [...roundPointsByPlayer]
     .sort((a, b) => b.points - a.points)
     .slice(0, 4);
