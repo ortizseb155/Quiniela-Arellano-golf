@@ -28,7 +28,7 @@ interface TeamStanding {
   roster: {
     playerName: string;
     round1: number; round2: number; round3: number; round4: number;
-    countsRound3: boolean; countsRound4: boolean;
+    countsRound1: boolean; countsRound2: boolean; countsRound3: boolean; countsRound4: boolean;
     cutBonus: number; finishBonus: number; total: number;
   }[];
 }
@@ -133,15 +133,19 @@ export default function SimulacionPage() {
       const round4Top4Idx = new Set([...roster].map((r, idx) => ({ idx, pts: r.round4 })).sort((a, b) => b.pts - a.pts).slice(0, 4).map(x => x.idx));
 
       const finalRoster = roster.map((r, idx) => {
+        const pick = picks[idx];
+        const countsRound1 = !pick.isReplacement;
+        const countsRound2 = !pick.isReplacement;
         const countsRound3 = round3Top4Idx.has(idx);
         const countsRound4 = round4Top4Idx.has(idx);
-        const total = r.round1 + r.round2 + (countsRound3 ? r.round3 : 0) + (countsRound4 ? r.round4 : 0) + r.cutBonus + r.finishBonus;
-        return { ...r, countsRound3, countsRound4, total };
+        const total = (countsRound1 ? r.round1 : 0) + (countsRound2 ? r.round2 : 0)
+          + (countsRound3 ? r.round3 : 0) + (countsRound4 ? r.round4 : 0) + r.cutBonus + r.finishBonus;
+        return { ...r, countsRound1, countsRound2, countsRound3, countsRound4, total };
       });
 
-      // Total del equipo respetando la regla: rondas 1-2 cuentan los 6, rondas 3-4 solo los 4 mejores de esa ronda
-      const round1Total = roster.reduce((sum, r) => sum + r.round1, 0);
-      const round2Total = roster.reduce((sum, r) => sum + r.round2, 0);
+      // Total del equipo respetando la regla: rondas 1-2 solo cuentan para los originales, rondas 3-4 solo los 4 mejores de esa ronda
+      const round1Total = roster.filter((r, idx) => !picks[idx].isReplacement).reduce((sum, r) => sum + r.round1, 0);
+      const round2Total = roster.filter((r, idx) => !picks[idx].isReplacement).reduce((sum, r) => sum + r.round2, 0);
       const round3Top4 = [...roster].sort((a, b) => b.round3 - a.round3).slice(0, 4).reduce((sum, r) => sum + r.round3, 0);
       const round4Top4 = [...roster].sort((a, b) => b.round4 - a.round4).slice(0, 4).reduce((sum, r) => sum + r.round4, 0);
       const cutBonusTotal = roster.reduce((sum, r) => sum + r.cutBonus, 0);
@@ -332,7 +336,8 @@ export default function SimulacionPage() {
               {s.roster.sort((a, b) => b.total - a.total).map((r, idx) => (
                 <tr key={idx}>
                   <td>{r.playerName}</td>
-                  <td>{r.round1}</td><td>{r.round2}</td>
+                  <td style={r.countsRound1 ? {} : { textDecoration: 'line-through', color: '#b3261e' }}>{r.round1}</td>
+                  <td style={r.countsRound2 ? {} : { textDecoration: 'line-through', color: '#b3261e' }}>{r.round2}</td>
                   <td style={r.countsRound3 ? {} : { textDecoration: 'line-through', color: '#b3261e' }}>{r.round3}</td>
                   <td style={r.countsRound4 ? {} : { textDecoration: 'line-through', color: '#b3261e' }}>{r.round4}</td>
                   <td>{r.cutBonus}</td><td>{r.finishBonus}</td><td><strong>{r.total}</strong></td>
