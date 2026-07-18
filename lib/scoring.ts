@@ -82,11 +82,13 @@ export function playerTotalPoints(
 
 // --- Puntos de un equipo (participante) para una ronda dada ---
 // Reglas: rondas 1-2 -> puntúan los 6 (o los que tenga el roster).
-// Rondas 3-4 -> solo los 4 jugadores del roster con MÁS PUNTOS EN ESA RONDA puntúan.
+// Rondas 3-4 -> solo los 4 jugadores QUE PASARON EL CORTE con MÁS PUNTOS EN ESA RONDA puntúan
+// (quien no pasó el corte no juega esas rondas, así que nunca puede ser de los 4).
 export function teamRoundPoints(
   picks: Pick[],
   round: number,
-  holeResults: HoleResultRow[]
+  holeResults: HoleResultRow[],
+  players: Player[] = []
 ): number {
   if (round <= 2) {
     // Los reemplazos NO estaban en el equipo en rondas 1-2, así que no cuentan aquí.
@@ -95,11 +97,13 @@ export function teamRoundPoints(
       .reduce((sum, p) => sum + playerRoundHolePoints(p.playerId, round, holeResults), 0);
   }
 
-  // Rondas 3 y 4: todos los del roster (originales y reemplazos) compiten; solo los 4 mejores de ESA ronda puntúan.
-  const roundPointsByPlayer = picks.map(p => ({
-    playerId: p.playerId,
-    points: playerRoundHolePoints(p.playerId, round, holeResults),
-  }));
+  // Rondas 3 y 4: solo compiten por el top-4 quienes SÍ pasaron el corte (juegan esas rondas).
+  const roundPointsByPlayer = picks
+    .map(p => {
+      const player = players.find(pl => pl.id === p.playerId);
+      return { playerId: p.playerId, points: playerRoundHolePoints(p.playerId, round, holeResults), madeCut: player?.madeCut === true };
+    })
+    .filter(p => p.madeCut);
   const top4 = [...roundPointsByPlayer]
     .sort((a, b) => b.points - a.points)
     .slice(0, 4);
@@ -116,7 +120,7 @@ export function teamTotalPoints(
   let total = 0;
   // Puntos de hoyos por ronda (aplicando regla de top-4 en rondas 3-4)
   for (const round of roundsPlayed) {
-    total += teamRoundPoints(picks, round, holeResults);
+    total += teamRoundPoints(picks, round, holeResults, players);
   }
   // Bonos (corte + posición final) - se suman por jugador, no por ronda
   // Los golfistas de REEMPLAZO no ganan estos bonos: solo puntúan por su desempeño en hoyos.
