@@ -82,12 +82,18 @@ export default function LeaderboardPage() {
           playerName: player?.name || '?',
           round1, round2, round3, round4,
           cutBonus, finishBonus: finBonus,
+          eligibleForRounds34: player?.madeCut === true, // no pasó el corte = no juega rondas 3-4, nunca cuenta ahí
         };
       });
 
-      // ¿Quién está en el top 4 de la ronda 3 / ronda 4? Solo esos cuentan para el equipo Y para su propio total.
-      const round3Top4Idx = new Set([...roster].map((r, idx) => ({ idx, pts: r.round3 })).sort((a, b) => b.pts - a.pts).slice(0, 4).map(x => x.idx));
-      const round4Top4Idx = new Set([...roster].map((r, idx) => ({ idx, pts: r.round4 })).sort((a, b) => b.pts - a.pts).slice(0, 4).map(x => x.idx));
+      // ¿Quién está en el top 4 de la ronda 3 / ronda 4? Solo cuentan quienes SÍ pasaron el corte (juegan esas rondas).
+      const eligibleIndices = roster.map((r, idx) => idx).filter(idx => roster[idx].eligibleForRounds34);
+      const round3Top4Idx = new Set(
+        [...eligibleIndices].map(idx => ({ idx, pts: roster[idx].round3 })).sort((a, b) => b.pts - a.pts).slice(0, 4).map(x => x.idx)
+      );
+      const round4Top4Idx = new Set(
+        [...eligibleIndices].map(idx => ({ idx, pts: roster[idx].round4 })).sort((a, b) => b.pts - a.pts).slice(0, 4).map(x => x.idx)
+      );
 
       const finalRoster = roster.map((r, idx, arr) => {
         const pick = picks[idx];
@@ -100,10 +106,10 @@ export default function LeaderboardPage() {
         return { ...r, countsRound1, countsRound2, countsRound3, countsRound4, total };
       });
       const roundTotals = {
-        round1: teamRoundPoints(picks, 1, holeResults),
-        round2: teamRoundPoints(picks, 2, holeResults),
-        round3: teamRoundPoints(picks, 3, holeResults),
-        round4: teamRoundPoints(picks, 4, holeResults),
+        round1: teamRoundPoints(picks, 1, holeResults, players),
+        round2: teamRoundPoints(picks, 2, holeResults, players),
+        round3: teamRoundPoints(picks, 3, holeResults, players),
+        round4: teamRoundPoints(picks, 4, holeResults, players),
         cutBonus: finalRoster.reduce((sum, r) => sum + r.cutBonus, 0),
         finishBonus: finalRoster.reduce((sum, r) => sum + r.finishBonus, 0),
       };
