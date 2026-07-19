@@ -35,6 +35,24 @@ export default function LeaderboardPage() {
 
   useEffect(() => { load(); }, []);
 
+  // Supabase limita cada consulta a un máximo de filas (usualmente 1000).
+  // Esta función pagina automáticamente para traer TODAS las filas, sin importar cuántas sean.
+  async function fetchAllRows(table: string, tournamentId: string) {
+    const pageSize = 1000;
+    let from = 0;
+    let allRows: any[] = [];
+    while (true) {
+      const { data, error } = await supabase
+        .from(table).select('*').eq('tournament_id', tournamentId)
+        .range(from, from + pageSize - 1);
+      if (error || !data) break;
+      allRows = allRows.concat(data);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    return allRows;
+  }
+
   async function load() {
     setLoading(true);
     const { data: tournaments } = await supabase
@@ -44,12 +62,13 @@ export default function LeaderboardPage() {
     setTournament(t);
     if (!t) { setLoading(false); return; }
 
-    const [{ data: playersData }, { data: picksData }, { data: holesData }, { data: participantsData }] = await Promise.all([
-      supabase.from('players').select('*').eq('tournament_id', t.id),
-      supabase.from('picks').select('*').eq('tournament_id', t.id),
-      supabase.from('hole_results').select('*').eq('tournament_id', t.id),
+    const [playersData, picksData, holesData, participantsResult] = await Promise.all([
+      fetchAllRows('players', t.id),
+      fetchAllRows('picks', t.id),
+      fetchAllRows('hole_results', t.id),
       supabase.from('participants').select('id, name'),
     ]);
+    const participantsData = participantsResult.data;
 
     const players: Player[] = (playersData || []).map(p => ({
       id: p.id, name: p.name, initialPrice: p.initial_price, currentPrice: p.current_price,
